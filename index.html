@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#402717">
+  <title>TiFphotodiscover</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; touch-action: none; }
+    body {
+      display: grid; place-items: center; font-family: ui-rounded, "Avenir Next", system-ui, sans-serif;
+      color: #fff7e8; background-color: #5c351d;
+      background-image:
+        radial-gradient(ellipse at 15% 18%, rgba(255,203,126,.16), transparent 32%),
+        radial-gradient(ellipse at 90% 75%, rgba(13,5,2,.36), transparent 45%),
+        repeating-linear-gradient(4deg, transparent 0 9px, rgba(49,22,9,.16) 10px 12px, transparent 14px 23px),
+        repeating-linear-gradient(176deg, rgba(255,181,93,.07) 0 2px, rgba(49,20,7,.11) 3px 6px, transparent 7px 17px),
+        linear-gradient(110deg, #7b4927, #4d2c18 47%, #70401f);
+      box-shadow: inset 0 0 130px rgba(20,8,2,.65);
+    }
+    body::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .22; mix-blend-mode: overlay; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='110' height='110'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.46'/%3E%3C/svg%3E"); }
+    #title { position: fixed; top: max(22px, env(safe-area-inset-top)); left: 0; width: 100%; text-align: center; letter-spacing: .075em; font-size: clamp(12px, 2vw, 15px); font-weight: 800; text-transform: uppercase; text-shadow: 0 2px 3px rgba(0,0,0,.55); pointer-events: none; }
+    #instruction { position: fixed; bottom: max(21px, env(safe-area-inset-bottom)); left: 0; width: 100%; padding: 0 22px; text-align: center; font-size: 13px; line-height: 1.35; color: rgba(255,246,225,.77); text-shadow: 0 2px 3px #291306; pointer-events: none; transition: opacity .55s; }
+    #instruction strong { color: #fff5dd; }
+    #photo { position: relative; width: min(72vw, 400px); padding: 13px 13px 50px; background: #f8f2e7; border-radius: 2px; box-shadow: 2px 4px 7px rgba(18,7,1,.42), 12px 22px 35px rgba(18,7,1,.46); transform-origin: center; }
+    #photo::after { content: "TiFphotodiscover"; position: absolute; left: 13px; right: 13px; bottom: 17px; color: #928b80; font-family: "Bradley Hand", "Comic Sans MS", cursive; font-size: clamp(12px, 2.5vw, 16px); text-align: center; }
+    #image-wrap { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: #29201b; }
+    #photo-image, #powder { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #photo-image { object-fit: cover; user-select: none; -webkit-user-drag: none; }
+    #powder { cursor: crosshair; touch-action: none; }
+    #progress { position: fixed; top: max(51px, calc(env(safe-area-inset-top) + 29px)); left: 50%; transform: translateX(-50%); min-width: 138px; padding: 7px 12px; border: 1px solid rgba(255,231,190,.25); border-radius: 100px; background: rgba(35,15,6,.27); backdrop-filter: blur(5px); color: rgba(255,242,212,.85); font-size: 11px; letter-spacing: .05em; text-align: center; pointer-events: none; }
+    #again { display: none; position: fixed; bottom: max(51px, calc(env(safe-area-inset-bottom) + 30px)); left: 50%; transform: translateX(-50%); border: 1px solid rgba(255,241,209,.68); border-radius: 100px; padding: 11px 18px; color: #3c210d; background: #fff0d2; font: 800 13px ui-rounded, system-ui, sans-serif; box-shadow: 0 4px 13px rgba(20,7,1,.32); }
+    #again:active { transform: translateX(-50%) scale(.94); }
+    @media (max-height: 560px) { #photo { width: min(57vh, 350px); } #instruction { display: none; } #again { bottom: 14px; } }
+  </style>
+</head>
+<body>
+  <div id="title">photo discovery</div>
+  <div id="progress">GRAPHITE REMAINS</div>
+  <main id="photo" aria-label="A hidden Polaroid photograph">
+    <div id="image-wrap">
+      <img id="photo-image" alt="A discovered photograph" draggable="false">
+      <canvas id="powder" aria-label="Scratch the graphite with your finger"></canvas>
+    </div>
+  </main>
+  <div id="instruction"><strong>Scratch slowly with one finger.</strong> The graphite is packed tight.</div>
+  <button id="again" type="button">Discover another photo</button>
+  <script>
+  (() => {
+    'use strict';
+    const canvas = document.querySelector('#powder');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const photo = document.querySelector('#photo');
+    const image = document.querySelector('#photo-image');
+    const progress = document.querySelector('#progress');
+    const hint = document.querySelector('#instruction');
+    const again = document.querySelector('#again');
+    const photos = ['photo_1.jpg','photo_2.jpg','photo_3.jpg','photo_4.jpg','photo_5.jpg','photo_6.jpg'];
+    let last = null, scratching = false, complete = false, lastProgress = 0;
+
+    function random(a, b) { return a + Math.random() * (b - a); }
+    function choosePhoto() { image.src = `photos/${photos[Math.floor(Math.random() * photos.length)]}`; }
+    function setRotation() { photo.style.transform = `rotate(${random(-13, 13).toFixed(2)}deg)`; }
+
+    function resizeCanvas() {
+      const r = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+      canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      paintPowder(r.width, r.height);
+    }
+
+    function paintPowder(w, h) {
+      complete = false; again.style.display = 'none'; hint.style.opacity = '1';
+      ctx.clearRect(0, 0, w, h);
+      // A charcoal-grey packed layer, then many clumps and loose sparkling grains.
+      const base = ctx.createLinearGradient(0, 0, w, h);
+      base.addColorStop(0, '#292a2a'); base.addColorStop(.45, '#151617'); base.addColorStop(1, '#353535');
+      ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = 'source-over';
+      for (let i = 0; i < w * h / 23; i++) {
+        const x = Math.random() * w, y = Math.random() * h, size = random(.25, 1.8);
+        ctx.fillStyle = Math.random() < .52 ? `rgba(0,0,0,${random(.08,.35)})` : `rgba(210,210,204,${random(.025,.13)})`;
+        ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
+      }
+      for (let i = 0; i < 190; i++) {
+        const x = Math.random() * w, y = Math.random() * h, r = random(2, 12);
+        const g = ctx.createRadialGradient(x-r*.25, y-r*.3, .2, x, y, r);
+        g.addColorStop(0, 'rgba(100,102,101,.32)'); g.addColorStop(.55, 'rgba(20,21,22,.16)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      // Natural gaps amount to roughly ten percent, as though powder missed a few spots.
+      ctx.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 105; i++) dustGap(Math.random()*w, Math.random()*h, random(2.2, 8));
+      ctx.globalCompositeOperation = 'source-over';
+      updateProgress(true);
+    }
+
+    function dustGap(x, y, radius) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+      g.addColorStop(0, 'rgba(0,0,0,.92)'); g.addColorStop(.55, 'rgba(0,0,0,.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+    }
+
+    function point(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX-r.left, y: e.clientY-r.top }; }
+    function scratch(x, y, pressure = 1) {
+      const radius = Math.max(10, Math.min(canvas.clientWidth, canvas.clientHeight) * .045) * pressure;
+      ctx.save(); ctx.globalCompositeOperation = 'destination-out';
+      // Bristles only slowly wear through the powder: deliberately low alpha requires repeated passes.
+      for (let i = 0; i < 18; i++) {
+        const a = Math.random() * Math.PI * 2, d = Math.random() * radius *.8;
+        const px = x + Math.cos(a)*d, py = y + Math.sin(a)*d;
+        const bristle = random(radius*.05, radius*.20);
+        const g = ctx.createRadialGradient(px, py, 0, px, py, bristle);
+        g.addColorStop(0, `rgba(0,0,0,${random(.045,.11)})`);
+        g.addColorStop(.68, `rgba(0,0,0,${random(.014,.05)})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(px, py, bristle, bristle*random(.35,.9), a, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+    function move(e) {
+      if (!scratching || complete) return;
+      const p = point(e), dx = p.x-last.x, dy = p.y-last.y, distance = Math.hypot(dx,dy), steps = Math.max(1, Math.ceil(distance / 5));
+      for (let i=1;i<=steps;i++) scratch(last.x + dx*i/steps, last.y + dy*i/steps, e.pressure || 1);
+      last = p; if (performance.now()-lastProgress > 260) updateProgress();
+    }
+    function updateProgress(force = false) {
+      const w = canvas.width, h = canvas.height, data = ctx.getImageData(0, 0, w, h).data;
+      let transparent = 0, samples = 0;
+      for (let y = 2; y < h; y += 12) for (let x = 2; x < w; x += 12) { samples++; if (data[(y*w+x)*4+3] < 80) transparent++; }
+      const revealed = Math.round(transparent / samples * 100); const remain = Math.max(0, 100-revealed);
+      progress.textContent = complete ? 'PHOTO DISCOVERED' : `GRAPHITE REMAINS · ${remain}%`;
+      lastProgress = performance.now();
+      if (revealed >= 48 && !complete) { complete = true; progress.textContent = 'PHOTO DISCOVERED'; hint.style.opacity = '0'; again.style.display = 'block'; }
+    }
+    canvas.addEventListener('pointerdown', e => { if (complete) return; e.preventDefault(); canvas.setPointerCapture(e.pointerId); scratching = true; last = point(e); scratch(last.x,last.y,e.pressure||1); hint.style.opacity = '0'; });
+    canvas.addEventListener('pointermove', move);
+    ['pointerup','pointercancel','lostpointercapture'].forEach(type => canvas.addEventListener(type, () => { scratching=false; last=null; updateProgress(); }));
+    again.addEventListener('click', () => { choosePhoto(); setRotation(); resizeCanvas(); });
+    window.addEventListener('resize', resizeCanvas);
+    choosePhoto(); setRotation(); requestAnimationFrame(resizeCanvas);
+  })();
+  </script>
+</body>
+</html>
