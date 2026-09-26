@@ -27,9 +27,10 @@
     #photo { position: relative; width: min(72vw, 400px); padding: 13px 13px 50px; background: #f8f2e7; border-radius: 2px; box-shadow: 2px 4px 7px rgba(18,7,1,.42), 12px 22px 35px rgba(18,7,1,.46); transform-origin: center; }
     #photo::after { content: "TiFphotodiscover"; position: absolute; left: 13px; right: 13px; bottom: 17px; color: #928b80; font-family: "Bradley Hand", "Comic Sans MS", cursive; font-size: clamp(12px, 2.5vw, 16px); text-align: center; }
     #image-wrap { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: #29201b; }
-    #photo-image, #powder { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #photo-image, #powder, #dust { position: absolute; inset: 0; width: 100%; height: 100%; }
     #photo-image { object-fit: cover; user-select: none; -webkit-user-drag: none; }
     #powder { cursor: crosshair; touch-action: none; }
+    #dust { pointer-events: none; mix-blend-mode: multiply; }
     #progress { position: fixed; top: max(51px, calc(env(safe-area-inset-top) + 29px)); left: 50%; transform: translateX(-50%); min-width: 138px; padding: 7px 12px; border: 1px solid rgba(255,231,190,.25); border-radius: 100px; background: rgba(35,15,6,.27); backdrop-filter: blur(5px); color: rgba(255,242,212,.85); font-size: 11px; letter-spacing: .05em; text-align: center; pointer-events: none; }
     #again { display: none; position: fixed; bottom: max(51px, calc(env(safe-area-inset-bottom) + 30px)); left: 50%; transform: translateX(-50%); border: 1px solid rgba(255,241,209,.68); border-radius: 100px; padding: 11px 18px; color: #3c210d; background: #fff0d2; font: 800 13px ui-rounded, system-ui, sans-serif; box-shadow: 0 4px 13px rgba(20,7,1,.32); }
     #again:active { transform: translateX(-50%) scale(.94); }
@@ -43,6 +44,7 @@
     <div id="image-wrap">
       <img id="photo-image" alt="A discovered photograph" draggable="false">
       <canvas id="powder" aria-label="Scratch the graphite with your finger"></canvas>
+      <canvas id="dust" aria-hidden="true"></canvas>
     </div>
   </main>
   <div id="instruction"><strong>Scratch slowly with one finger.</strong> The graphite is packed tight.</div>
@@ -52,6 +54,8 @@
     'use strict';
     const canvas = document.querySelector('#powder');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const dust = document.querySelector('#dust');
+    const dustCtx = dust.getContext('2d');
     const photo = document.querySelector('#photo');
     const image = document.querySelector('#photo-image');
     const progress = document.querySelector('#progress');
@@ -59,6 +63,7 @@
     const again = document.querySelector('#again');
     const photos = ['photo_1.jpg','photo_2.jpg','photo_3.jpg','photo_4.jpg','photo_5.jpg','photo_6.jpg'];
     let last = null, scratching = false, complete = false, lastProgress = 0;
+    let grains = [], dustFrame = null, lastDustTime = 0;
 
     function random(a, b) { return a + Math.random() * (b - a); }
     function choosePhoto() { image.src = `photos/${photos[Math.floor(Math.random() * photos.length)]}`; }
@@ -68,6 +73,9 @@
       const r = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
       canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dust.width = Math.round(r.width * dpr); dust.height = Math.round(r.height * dpr);
+      dustCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      grains = [];
       paintPowder(r.width, r.height);
     }
 
@@ -104,7 +112,7 @@
     }
 
     function point(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX-r.left, y: e.clientY-r.top }; }
-    function scratch(x, y, pressure = 1) {
+    function scratch(x, y, pressure = 1, vx = 0, vy = 0) {
       const radius = Math.max(10, Math.min(canvas.clientWidth, canvas.clientHeight) * .045) * pressure;
       ctx.save(); ctx.globalCompositeOperation = 'destination-out';
       // Bristles only slowly wear through the powder: deliberately low alpha requires repeated passes.
@@ -118,11 +126,49 @@
         ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(px, py, bristle, bristle*random(.35,.9), a, 0, Math.PI*2); ctx.fill();
       }
       ctx.restore();
+      if (vx || vy) releaseGrains(x, y, radius, vx, vy);
+    }
+    function releaseGrains(x, y, radius, vx, vy) {
+      const speed = Math.min(16, Math.hypot(vx, vy));
+      if (speed < .7) return;
+      const direction = Math.atan2(vy, vx);
+      const count = Math.min(10, 3 + Math.floor(speed * .55));
+      for (let i = 0; i < count; i++) {
+        const angle = direction + random(-1.2, 1.2);
+        const push = random(.5, 2.5) + speed * random(.18, .45);
+        grains.push({
+          x: x + random(-radius*.55, radius*.55), y: y + random(-radius*.55, radius*.55),
+          vx: Math.cos(angle) * push, vy: Math.sin(angle) * push - random(.15, 1.25),
+          r: random(.45, 2.1), alpha: random(.35, .83), age: 0,
+          life: random(280, 940), settled: false
+        });
+      }
+      if (grains.length > 650) grains.splice(0, grains.length - 650);
+      if (!dustFrame) { lastDustTime = performance.now(); dustFrame = requestAnimationFrame(animateGrains); }
+    }
+    function animateGrains(now) {
+      const dt = Math.min(32, now - lastDustTime) / 16.67; lastDustTime = now;
+      dustCtx.clearRect(0, 0, dust.clientWidth, dust.clientHeight);
+      const width = dust.clientWidth, height = dust.clientHeight;
+      grains = grains.filter(g => {
+        g.age += dt * 16.67;
+        if (!g.settled) {
+          g.vx *= Math.pow(.91, dt); g.vy = g.vy * Math.pow(.94, dt) + .10 * dt;
+          g.x += g.vx * dt; g.y += g.vy * dt;
+          if (g.y >= height - 1 || Math.hypot(g.vx, g.vy) < .24) { g.settled = true; g.vx = 0; g.vy = 0; g.life += 620; }
+        }
+        const fade = Math.max(0, 1 - g.age / g.life);
+        if (fade <= 0 || g.x < -8 || g.x > width+8 || g.y < -8 || g.y > height+8) return false;
+        dustCtx.fillStyle = `rgba(${g.settled ? '20,20,20' : '38,39,39'},${g.alpha * fade})`;
+        dustCtx.beginPath(); dustCtx.ellipse(g.x, g.y, g.r, g.r * (g.settled ? .48 : .75), Math.atan2(g.vy, g.vx), 0, Math.PI * 2); dustCtx.fill();
+        return true;
+      });
+      dustFrame = grains.length ? requestAnimationFrame(animateGrains) : null;
     }
     function move(e) {
       if (!scratching || complete) return;
       const p = point(e), dx = p.x-last.x, dy = p.y-last.y, distance = Math.hypot(dx,dy), steps = Math.max(1, Math.ceil(distance / 5));
-      for (let i=1;i<=steps;i++) scratch(last.x + dx*i/steps, last.y + dy*i/steps, e.pressure || 1);
+      for (let i=1;i<=steps;i++) scratch(last.x + dx*i/steps, last.y + dy*i/steps, e.pressure || 1, dx/steps, dy/steps);
       last = p; if (performance.now()-lastProgress > 260) updateProgress();
     }
     function updateProgress(force = false) {
